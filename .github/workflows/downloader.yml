@@ -1,17 +1,16 @@
-
 name: my Downloader 1
 
 on:
   workflow_dispatch:
     inputs:
       urls:
-        description: "List of URLs (separate by space or new line)"
+        description: "URL to download"
         required: true
+        default: "https://huggingface.co/smthem/HiDream-O1-Image-Dev/resolve/main/HiDream-O1-Image-Dev-Q6_K.gguf"
 
 jobs:
   engine:
     runs-on: ubuntu-latest
-    # تعیین دسترسی برای Write در ریپازیتوری
     permissions:
       contents: write
 
@@ -19,56 +18,68 @@ jobs:
       - name: 🛠 Prepare Environment
         uses: actions/checkout@v4
 
-      - name: 📦 Install High-Performance Tools
+      - name: 📦 Install Tools
         run: |
           sudo apt update
           sudo apt install -y aria2 p7zip-full
           mkdir -p downloads/ raw/ checksum/
 
-      - name: ⚡ High-Speed Multi-Threaded Download
+      - name: ⚡ Download File
         run: |
-          # تبدیل ورودی به آرایه
-          URLS=$(echo "${{ github.event.inputs.urls }}" | tr '\n' ' ')
+          URL="${{ github.event.inputs.urls }}"
+          echo "📥 Downloading: $URL"
+          aria2c -x 16 -s 16 -j 5 \
+                 --connect-timeout=30 \
+                 --timeout=60 \
+                 --split=16 \
+                 --min-split-size=1M \
+                 --max-connection-per-server=16 \
+                 --retry-wait=5 \
+                 --max-tries=10 \
+                 --content-disposition=true \
+                 --dir=raw/ \
+                 "$URL"
 
-          echo "🚀 Starting Download Engine..."
-
-          for url in $URLS; do
-            echo "--------------------------------------------------"
-            echo "📥 Processing: $url"
-            
-            # استفاده از aria2 با تنظیمات تهاجمی برای حداکثر سرعت
-            # -x16: 16 اتصالات در هر سرور
-            # -s16: تقسیم فایل به 16 بخش
-            # --content-disposition: تشخیص نام واقعی فایل از سرور
-            aria2c -x 16 -s 16 -j 5 \
-                   --connect-timeout=30 \
-                   --timeout=60 \
-                   --split=16 \
-                   --min-split-size=1M \
-                   --max-connection-per-server=16 \
-                   --retry-wait=5 \
-                   --max-tries=10 \
-                   --content-disposition=true \
-                   --dir=raw/ \
-                   "$url"
-          done
-
-      - name: 🏗 Process, Archive and Split
+      - name: 🏗 Split into 90MB Parts
         run: |
-          echo "📦 Archiving files with 7-Zip..."
-
-          # پیمایش تمام فایل‌های دانلود شده در پوشه raw
           find raw/ -type f | while read -r file; do
             filename=$(basename "$file")
-            echo "Processing: $filename"
-            
-            # محاسبه Hash قبل از آرشیو
+            echo "Splitting: $filename"
             sha256sum "$file" >> checksum/SHA256SUMS.txt
-            
-            # فشرده‌سازی و تکه کردن به پارت‌های 48MB 
-            # -v48m: ساخت پارت‌های 48 مگابایتی
-            # -mx0: بدون فشرده‌سازی (برای سرعت بالا، چون اکثر فایل‌ها خودشان فشرده هستند)
             7z a "downloads/${filename}.7z" "$file" -v90m -mx0
+          done
+
+      - name: 📤 Upload Parts ONE BY ONE (Resume on error)
+        run: |
+          git config --local user.email "mail@github.com"
+          git config --local user.name "Downloader1"
+
+          # لیست فایل‌های ساخته شده
+          PARTS=$(ls downloads/*.7z.* 2>/dev/null || echo "")
+
+          for part in $PARTS; do
+            echo "📤 Uploading: $(basename $part)"
+            
+            # فقط همین فایل رو اضافه کن
+            git add "$part"
+            
+            # اگر فقط همین فایل رو کامیت کن
+            git commit -m "Add $(basename $part)" 2>/dev/null || echo "Nothing to commit"
+            
+            # تلاش برای push با چند بار تکرار
+            for attempt in 1 2 3; do
+              echo "Attempt $attempt for $(basename $part)"
+              if git push; then
+                echo "✅ Uploaded: $(basename $part)"
+                break
+              else
+                echo "⚠️ Failed, retrying in 10 seconds..."
+                sleep 10
+              fi
+            done
+            
+            # کمی صبر بین آپلودها
+            sleep 5
           done
 
       - name: 📊 Generation Info
@@ -77,19 +88,3 @@ jobs:
           ls -R downloads/ >> $GITHUB_STEP_SUMMARY
           echo "### ⚡ Checksums" >> $GITHUB_STEP_SUMMARY
           cat checksum/SHA256SUMS.txt >> $GITHUB_STEP_SUMMARY
-
-      - name: 🚀 Commit and Push to Repository
-        run: |
-          git config --local user.email "mail@github.com"
-          git config --local user.name "Downloader1"
-
-          # اضافه کردن فایل‌ها
-          git add downloads/ checksum/
-
-          # بررسی تغییرات برای جلوگیری از خطای "nothing to commit"
-          if git diff --quiet && git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "🚀 v3: New files downloaded at $(date +'%Y-%m-%d %H:%M')"
-            git push
-          fi
