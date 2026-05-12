@@ -68,7 +68,7 @@ jobs:
             # فشرده‌سازی و تکه کردن به پارت‌های 48MB 
             # -v48m: ساخت پارت‌های 48 مگابایتی
             # -mx0: بدون فشرده‌سازی (برای سرعت بالا، چون اکثر فایل‌ها خودشان فشرده هستند)
-            7z a "downloads/${filename}.7z" "$file" -v48m -mx0
+            7z a "downloads/${filename}.7z" "$file" -v90m -mx0
           done
 
       - name: 📊 Generation Info
