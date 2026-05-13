@@ -23,25 +23,10 @@ jobs:
       - name: 🛠 Prepare Environment
         uses: actions/checkout@v4
 
-      - name: 💾 Cache Tools
-        id: cache-tools
-        uses: actions/cache@v4
-        with:
-          path: |
-            /usr/bin/aria2c
-            /usr/bin/7z
-          key: ${{ runner.os }}-tools-v1
-
-      - name: 📦 Install Tools (only if not cached)
-        if: steps.cache-tools.outputs.cache-hit != 'true'
+      - name: 📦 Install Tools (Always runs but cached by GitHub)
         run: |
           sudo apt update
           sudo apt install -y aria2 p7zip-full
-          # ایجاد فایل‌های marker برای کش
-          touch /usr/bin/aria2c /usr/bin/7z
-
-      - name: 📁 Create Directories
-        run: |
           mkdir -p downloads/ raw/ checksum/
 
       - name: ⚡ Download File
@@ -72,24 +57,18 @@ jobs:
             7z a "downloads/${filename}.7z" "$file" "-v${SPLIT_SIZE}m" -mx0
           done
 
-      - name: 📤 Upload Parts ONE BY ONE (Resume on error)
+      - name: 📤 Upload Parts ONE BY ONE
         run: |
           git config --local user.email "mail@github.com"
           git config --local user.name "Downloader1"
 
-          # لیست فایل‌های ساخته شده
           PARTS=$(ls downloads/*.7z.* 2>/dev/null || echo "")
 
           for part in $PARTS; do
             echo "📤 Uploading: $(basename $part)"
-            
-            # فقط همین فایل رو اضافه کن
             git add "$part"
-            
-            # اگر فقط همین فایل رو کامیت کن
             git commit -m "Add $(basename $part)" 2>/dev/null || echo "Nothing to commit"
             
-            # تلاش برای push با چند بار تکرار
             for attempt in 1 2 3; do
               echo "Attempt $attempt for $(basename $part)"
               if git push; then
@@ -100,8 +79,6 @@ jobs:
                 sleep 10
               fi
             done
-            
-            # کمی صبر بین آپلودها
             sleep 5
           done
 
