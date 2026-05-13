@@ -7,8 +7,11 @@ on:
         description: "URL to download"
         required: true
         default: "https://civitai.com/models/2611889/rebels-hidream-01-image-dev?modelVersionId=2937990"
-
-        # default: "https://huggingface.co/smthem/HiDream-O1-Image-Dev/resolve/main/HiDream-O1-Image-Dev-Q6_K.gguf"
+      split_size:
+        description: "Split size in MB (e.g., 90, 100, 200)"
+        required: false
+        default: "90"
+        type: string
 
 jobs:
   engine:
@@ -20,10 +23,25 @@ jobs:
       - name: 🛠 Prepare Environment
         uses: actions/checkout@v4
 
-      - name: 📦 Install Tools
+      - name: 💾 Cache Tools
+        id: cache-tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/bin/aria2c
+            /usr/bin/7z
+          key: ${{ runner.os }}-tools-v1
+
+      - name: 📦 Install Tools (only if not cached)
+        if: steps.cache-tools.outputs.cache-hit != 'true'
         run: |
           sudo apt update
           sudo apt install -y aria2 p7zip-full
+          # ایجاد فایل‌های marker برای کش
+          touch /usr/bin/aria2c /usr/bin/7z
+
+      - name: 📁 Create Directories
+        run: |
           mkdir -p downloads/ raw/ checksum/
 
       - name: ⚡ Download File
@@ -42,13 +60,16 @@ jobs:
                  --dir=raw/ \
                  "$URL"
 
-      - name: 🏗 Split into 90MB Parts
+      - name: 🏗 Split into Parts
         run: |
+          SPLIT_SIZE="${{ github.event.inputs.split_size }}"
+          echo "📦 Splitting files into ${SPLIT_SIZE}MB parts"
+          
           find raw/ -type f | while read -r file; do
             filename=$(basename "$file")
             echo "Splitting: $filename"
             sha256sum "$file" >> checksum/SHA256SUMS.txt
-            7z a "downloads/${filename}.7z" "$file" -v90m -mx0
+            7z a "downloads/${filename}.7z" "$file" "-v${SPLIT_SIZE}m" -mx0
           done
 
       - name: 📤 Upload Parts ONE BY ONE (Resume on error)
@@ -87,6 +108,8 @@ jobs:
       - name: 📊 Generation Info
         run: |
           echo "### 📂 Download Summary" >> $GITHUB_STEP_SUMMARY
+          echo "**Split Size:** ${{ github.event.inputs.split_size }}MB" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           ls -R downloads/ >> $GITHUB_STEP_SUMMARY
           echo "### ⚡ Checksums" >> $GITHUB_STEP_SUMMARY
           cat checksum/SHA256SUMS.txt >> $GITHUB_STEP_SUMMARY
