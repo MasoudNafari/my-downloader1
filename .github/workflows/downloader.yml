@@ -6,7 +6,9 @@ on:
       urls:
         description: "URL to download"
         required: true
-        default: "https://huggingface.co/smthem/HiDream-O1-Image-Dev/resolve/main/HiDream-O1-Image-Dev-Q6_K.gguf"
+        default: "https://civitai.com/models/2611889/rebels-hidream-01-image-dev?modelVersionId=2937990"
+
+        # default: "https://huggingface.co/smthem/HiDream-O1-Image-Dev/resolve/main/HiDream-O1-Image-Dev-Q6_K.gguf"
 
 jobs:
   engine:
